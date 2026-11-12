@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Doto:wght@700;900&family=Roboto+Flex:opsz,wght@8..144,300..700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<style>
+  :root {
+    --acc: #F0552D;          /* Faceclaw lobster, the only accent */
+    --surf: #282C30;         /* stock CMF icon circle */
+    --surf2: #1D2023;
+    --ink: #F0F0F0;
+    --ink2: #9A9EA3;
+    --ink3: #5C6166;
+    --watch: 236px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .wrap { font-family: var(--font-sans); color: var(--foreground); }
+
+  /* state switch */
+  .states { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0 0 14px; }
+  .states input { position: absolute; opacity: 0; pointer-events: none; }
+  .states label { font-size: 13px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border);
+    color: var(--muted-foreground); cursor: pointer; user-select: none; }
+  .states .hint { font-size: 12px; color: var(--muted-foreground); margin-left: 4px; }
+  #st-idle:checked ~ .states label[for=st-idle],
+  #st-sent:checked ~ .states label[for=st-sent],
+  #st-off:checked ~ .states label[for=st-off] { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
+  .sw { position: absolute; opacity: 0; pointer-events: none; }
+
+  .only-sent, .only-off { display: none !important; }
+  #st-sent:checked ~ .grid .only-sent { display: flex !important; }
+  #st-sent:checked ~ .grid .only-idle { display: none !important; }
+  #st-off:checked ~ .grid .only-off { display: flex !important; }
+  #st-off:checked ~ .grid .only-idle { display: none !important; }
+  #st-sent:checked ~ .grid .no-sent { display: none !important; }
+  #st-off:checked ~ .grid .no-off { display: none !important; }
+
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .card h3 { margin: 0 0 2px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .card .num { color: var(--muted-foreground); font-weight: 500; margin-right: 6px; }
+  .card p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.45; color: var(--muted-foreground); }
+  .card ul { margin: 10px 0 0; padding: 0; list-style: none; font-size: 12px; line-height: 1.55; color: var(--muted-foreground); }
+  .card ul b { color: var(--foreground); font-weight: 500; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted-foreground); margin: 0 4px 0 0; }
+  .tag.pick { border-color: var(--acc); color: var(--acc); }
+
+  /* the device */
+  .stage { display: flex; justify-content: center; padding: 8px 0 4px; }
+  .device { position: relative; width: calc(var(--watch) + 20px); height: calc(var(--watch) + 20px); border-radius: 50%;
+    background: linear-gradient(145deg, #3a3d41, #17181a); padding: 10px; }
+  .device::after { content: ""; position: absolute; right: -7px; top: 44%; width: 9px; height: 26px; border-radius: 3px;
+    background: linear-gradient(90deg, #2b2d30, #4a4d51); }
+  .scr { position: relative; width: var(--watch); height: var(--watch); border-radius: 50%; background: #000; overflow: hidden;
+    font-family: "Roboto Flex", Roboto, system-ui, sans-serif; color: var(--ink); }
+  .abs { position: absolute; }
+  .ctr { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+  .col { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .row { display: flex; align-items: center; justify-content: center; }
+  .ph { line-height: 1; }
+  .dot-font { font-family: "Doto", monospace; }
+
+  /* 1 pad and clock */
+  .d1 .clock { font-size: 58px; font-weight: 300; letter-spacing: -0.03em; }
+  .d1 .status { font-size: 14px; color: var(--ink2); gap: 6px; margin-top: 2px; }
+  .d1 .status.off { color: var(--acc); }
+  .d1 .pill { left: 50%; bottom: 26px; transform: translateX(-50%); padding: 5px 12px; border-radius: 999px; background: var(--surf);
+    font-size: 12.5px; gap: 6px; white-space: nowrap; }
+  .d1 .pill i { color: var(--acc); }
+
+  /* 2 dot matrix */
+  .d2 .t { font-size: 64px; font-weight: 900; line-height: .9; letter-spacing: 2px; }
+  .d2 .w { font-size: 22px; font-weight: 700; letter-spacing: 3px; margin-top: 12px; color: var(--ink2); }
+  .d2 .w.a { color: var(--acc); }
+  .d2 .led { top: 30px; left: 50%; transform: translateX(-50%); width: 9px; height: 9px; border-radius: 50%; background: var(--ink3); }
+  .d2 .led.on { background: var(--ink); }
+  .d2 .led.bad { background: var(--acc); }
+
+  /* 3 crown ring */
+  .d3 .ticks { inset: 0; border-radius: 50%;
+    background: repeating-conic-gradient(from -1deg, #3b3f44 0 2deg, transparent 2deg 6deg);
+    -webkit-mask: radial-gradient(circle, transparent 104px, #000 105px); mask: radial-gradient(circle, transparent 104px, #000 105px); }
+  .d3 .lit { inset: 0; border-radius: 50%;
+    background: conic-gradient(from 30deg, var(--acc) 0 26deg, transparent 26deg);
+    -webkit-mask: radial-gradient(circle, transparent 104px, #000 105px); mask: radial-gradient(circle, transparent 104px, #000 105px); }
+  .d3 .big { font-size: 46px; font-weight: 300; }
+  .d3 .lbl { font-size: 12.5px; color: var(--ink2); margin-top: 4px; text-align: center; line-height: 1.4; }
+
+  /* 4 bezel arcs */
+  .d4 .arc { top: 50%; width: 52px; height: 150px; transform: translateY(-50%); background: var(--surf); gap: 4px; font-size: 11px; color: var(--ink2); }
+  .d4 .arc i { font-size: 22px; color: var(--ink); }
+  .d4 .arc.l { left: 0; border-radius: 0 75px 75px 0 / 0 75px 75px 0; padding-left: 6px; }
+  .d4 .arc.r { right: 0; border-radius: 75px 0 0 75px / 75px 0 0 75px; padding-right: 6px; }
+  .d4 .arc.hot { background: var(--acc); color: #fff; }
+  .d4 .arc.hot i { color: #fff; }
+  .d4 .mid .c { font-size: 34px; font-weight: 300; }
+  .d4 .mid .h { font-size: 12px; color: var(--ink2); margin-top: 4px; }
+  .d4 .bot { bottom: 18px; left: 50%; transform: translateX(-50%); font-size: 11.5px; color: var(--ink2); gap: 5px; }
+
+  /* 5 big select */
+  .d5 .core { width: 118px; height: 118px; border-radius: 50%; background: var(--surf); gap: 4px; font-size: 13px; }
+  .d5 .core i { font-size: 30px; }
+  .d5 .core.hot { background: var(--acc); }
+  .d5 .sat { width: 44px; height: 44px; border-radius: 50%; background: var(--surf2); border: 1px solid #33373c; font-size: 19px; color: var(--ink); }
+  .d5 .cap { font-size: 10px; color: var(--ink2); }
+  .d5.dim .core, .d5.dim .sat { opacity: .35; }
+
+  /* 6 echo */
+  .d6 .word { font-size: 60px; font-weight: 600; letter-spacing: -0.035em; line-height: 1; }
+  .d6 .word.faint { color: #3a3e43; font-weight: 500; }
+  .d6 .bar { width: 34px; height: 4px; border-radius: 2px; background: var(--acc); margin-top: 12px; }
+  .d6 .sub { font-size: 12px; color: var(--ink2); margin-top: 10px; text-align: center; line-height: 1.4; }
+  .d6 .top { top: 30px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--ink2); }
+
+  /* 7 ripple */
+  .d7 .r { border-radius: 50%; border: 2px solid var(--acc); transform: translate(-50%, -50%); }
+  .d7 .r.g { border-color: #3a3e43; }
+  .d7 .tip { font-size: 12.5px; color: var(--ink2); }
+  .d7 .say { top: 34px; left: 50%; transform: translateX(-50%); font-size: 14px; gap: 6px; white-space: nowrap; }
+
+  /* 8 cockpit */
+  .d8 .clk { top: 30px; left: 50%; transform: translateX(-50%); font-size: 26px; font-weight: 400; }
+  .d8 .chips { top: 70px; left: 50%; transform: translateX(-50%); gap: 6px; }
+  .d8 .chip { font-size: 11px; padding: 4px 8px; border-radius: 999px; background: var(--surf); gap: 4px; white-space: nowrap; color: var(--ink2); }
+  .d8 .chip i { color: var(--ink); }
+  .d8 .chip.bad i, .d8 .chip.bad { color: var(--acc); }
+  .d8 .last { top: 118px; left: 50%; transform: translateX(-50%); }
+  .d8 .last .k { font-size: 11px; color: var(--ink3); text-transform: uppercase; letter-spacing: .12em; }
+  .d8 .last .v { font-size: 30px; font-weight: 500; margin-top: 2px; }
+  .d8 .keys { bottom: 30px; left: 50%; transform: translateX(-50%); gap: 10px; color: var(--ink3); font-size: 15px; }
+  .d8 .keys .on { color: var(--acc); }
+
+  /* 9 night */
+  .d9 .c { font-size: 50px; font-weight: 200; color: #6c7075; letter-spacing: -0.02em; }
+  .d9 .s { font-size: 12px; color: #4a4e53; margin-top: 4px; }
+  .d9 .edge { inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 3px var(--acc), inset 0 0 22px rgba(240,85,45,.35); }
+
+  /* 10 radial */
+  .d10 .hint { font-size: 12.5px; color: var(--ink2); text-align: center; line-height: 1.5; }
+  .d10 .c { font-size: 40px; font-weight: 300; }
+  .d10 .opt { width: 58px; height: 58px; border-radius: 50%; background: var(--surf); font-size: 10px; gap: 3px; color: var(--ink2); transform: translate(-50%, -50%); }
+  .d10 .opt i { font-size: 19px; color: var(--ink); }
+  .d10 .opt.hot { background: var(--acc); color: #fff; }
+  .d10 .opt.hot i { color: #fff; }
+  .d10 .finger { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; opacity: .7; transform: translate(-50%, -50%); }
+  .d10 .rel { font-size: 11px; color: var(--ink2); text-align: center; }
+
+  /* 11 edge tray */
+  .d11 .c { font-size: 50px; font-weight: 300; letter-spacing: -0.02em; }
+  .d11 .s { font-size: 13px; color: var(--ink2); margin-top: 2px; }
+  .d11 .grab { bottom: 20px; left: 50%; transform: translateX(-50%); width: 30px; height: 4px; border-radius: 2px; background: #44484d; }
+  .d11 .tray { left: 0; right: 0; bottom: 0; height: 92px; background: var(--surf2); border-top: 1px solid #2f3337; gap: 10px; padding-bottom: 18px; }
+  .d11 .b { width: 40px; height: 40px; border-radius: 50%; background: var(--surf); font-size: 18px; }
+  .d11 .b.hot { background: var(--acc); }
+
+  /* 12 guide */
+  .d12 .g { font-size: 10.5px; color: var(--ink2); text-align: center; line-height: 1.35; }
+  .d12 .g b { display: block; color: var(--ink); font-weight: 500; font-size: 12px; }
+  .d12 .tapc { width: 84px; height: 84px; border-radius: 50%; border: 1.5px dashed #4a4e53; font-size: 12px; color: var(--ink); }
+  .d12 .tapc.hot { border: 2px solid var(--acc); }
+  .d12.learned .g { opacity: .28; }
+
+  .foot { margin-top: 16px; font-size: 12.5px; line-height: 1.55; color: var(--muted-foreground); }
+  .foot b { color: var(--foreground); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <input class="sw" type="radio" name="st" id="st-idle" checked>
+  <input class="sw" type="radio" name="st" id="st-sent">
+  <input class="sw" type="radio" name="st" id="st-off">
+  <div class="states">
+    <label for="st-idle">Idle</label>
+    <label for="st-sent">Command sent</label>
+    <label for="st-off">Phone not linked</label>
+    <span class="hint">Switch every design between its three states</span>
+  </div>
+
+  <div class="grid">
+
+    <!-- 1 -->
+    <div class="card">
+      <h3><span class="num">1</span>Pad and clock</h3>
+      <p>A straight port of the Faceclaw Wear OS remote: the whole screen is the pad, a large clock in the middle, one status line, and a pill that echoes each command.</p>
+      <div class="stage"><div class="device"><div class="scr d1">
+        <div class="abs ctr col" style="top:46%">
+          <div class="clock">10:42</div>
+          <div class="status row only-idle"><i class="ph ph-link"></i>Phone linked</div>
+          <div class="status row only-sent"><i class="ph ph-link"></i>Phone linked</div>
+          <div class="status off row only-off"><i class="ph ph-link-break"></i>No phone</div>
+        </div>
+        <div class="abs pill row only-sent"><i class="ph-fill ph-hand-tap"></i>Select</div>
+        <div class="abs pill row only-off" style="color:var(--ink2)">Open Bluetooth on your phone</div>
+      </div></div></div>
+      <span class="tag pick">Recommended</span><span class="tag">Same gestures as today</span>
+      <ul><li><b>Why:</b> matches the app you already use, so muscle memory carries over.</li>
+        <li><b>Build:</b> num56E clock, font24M labels, one rounded rect.</li></ul>
+    </div>
+
+    <!-- 2 -->
+    <div class="card">
+      <h3><span class="num">2</span>Dot matrix</h3>
+      <p>Uses the watch's own Nothing-style dot font. The clock and the last command share one typographic voice; a single LED dot is the phone link.</p>
+      <div class="stage"><div class="device"><div class="scr d2">
+        <div class="abs led on no-off"></div><div class="abs led bad only-off"></div>
+        <div class="abs ctr col">
+          <div class="t dot-font">10<br>42</div>
+          <div class="w dot-font only-idle">READY</div>
+          <div class="w a dot-font only-sent">SELECT</div>
+          <div class="w a dot-font only-off">NO LINK</div>
+        </div>
+      </div></div></div>
+      <span class="tag">Brand match</span><span class="tag">Same gestures</span>
+      <ul><li><b>Why:</b> looks native to a CMF watch rather than a port.</li>
+        <li><b>Build:</b> nm104N / nm48N fonts already on the watch.</li></ul>
+    </div>
+
+    <!-- 3 -->
+    <div class="card">
+      <h3><span class="num">3</span>Crown ring</h3>
+      <p>The bezel shows a tick ring and a lit segment that moves one tick per crown detent, so you can feel and see how far you scrolled the glasses list.</p>
+      <div class="stage"><div class="device"><div class="scr d3">
+        <div class="abs ticks"></div>
+        <div class="abs lit only-sent"></div>
+        <div class="abs ctr col only-idle"><i class="ph ph-arrows-down-up big"></i><div class="lbl">Turn to scroll<br>Tap to select</div></div>
+        <div class="abs ctr col only-sent"><div class="big">+3</div><div class="lbl">Scrolled down</div></div>
+        <div class="abs ctr col only-off"><i class="ph ph-link-break big" style="color:var(--acc)"></i><div class="lbl">No phone</div></div>
+      </div></div></div>
+      <span class="tag">Crown first</span><span class="tag">Same gestures</span>
+      <ul><li><b>Why:</b> scrolling is the most frequent action; this makes it legible.</li>
+        <li><b>Build:</b> lv_arc for the lit segment, lv_line ticks drawn once.</li></ul>
+    </div>
+
+    <!-- 4 -->
+    <div class="card">
+      <h3><span class="num">4</span>Bezel arcs</h3>
+      <p>Back and Menu become edge buttons you can find by touch at the rim. The middle stays a tap pad for Select. No timing-based gestures to remember.</p>
+      <div class="stage"><div class="device"><div class="scr d4">
+        <div class="abs arc l col only-idle"><i class="ph ph-arrow-u-up-left"></i>Back</div>
+        <div class="abs arc l col hot only-sent"><i class="ph ph-arrow-u-up-left"></i>Back</div>
+        <div class="abs arc l col only-off" style="opacity:.35"><i class="ph ph-arrow-u-up-left"></i>Back</div>
+        <div class="abs arc r col no-off"><i class="ph ph-list"></i>Menu</div>
+        <div class="abs arc r col only-off" style="opacity:.35"><i class="ph ph-list"></i>Menu</div>
+        <div class="abs ctr col mid"><div class="c">10:42</div><div class="h only-idle">Tap to select</div><div class="h only-sent" style="color:var(--acc)">Back sent</div><div class="h only-off" style="color:var(--acc)">No phone</div></div>
+        <div class="abs bot row"><i class="ph ph-microphone"></i>Press crown to talk</div>
+      </div></div></div>
+      <span class="tag">Explicit buttons</span>
+      <ul><li><b>Why:</b> edges are findable without looking, which suits eyes-on-glasses use.</li>
+        <li><b>Build:</b> two rounded objects clipped by the round screen.</li></ul>
+    </div>
+
+    <!-- 5 -->
+    <div class="card">
+      <h3><span class="num">5</span>Big select</h3>
+      <p>One large thumb target for Select, with four small satellite buttons for the less frequent commands. Every command is one tap, nothing hidden.</p>
+      <div class="stage"><div class="device"><div class="scr d5">
+        <div class="abs ctr col core no-sent"><i class="ph ph-hand-tap"></i>Select</div>
+        <div class="abs ctr col core hot only-sent"><i class="ph-fill ph-hand-tap"></i>Sent</div>
+        <div class="abs row sat" style="left:12px;top:96px"><i class="ph ph-arrow-u-up-left"></i></div>
+        <div class="abs row sat" style="right:12px;top:96px"><i class="ph ph-list"></i></div>
+        <div class="abs row sat" style="left:96px;top:10px"><i class="ph ph-squares-four"></i></div>
+        <div class="abs row sat" style="left:96px;bottom:10px"><i class="ph ph-microphone"></i></div>
+        <div class="abs only-off" style="inset:0;background:rgba(0,0,0,.7)"></div>
+        <div class="abs ctr col only-off" style="font-size:13px;color:var(--acc);gap:4px"><i class="ph ph-link-break" style="font-size:26px"></i>No phone</div>
+      </div></div></div>
+      <span class="tag">Explicit buttons</span><span class="tag">Learn in seconds</span>
+      <ul><li><b>Satellites:</b> Back, Menu, App menu, Voice. Crown still scrolls.</li>
+        <li><b>Build:</b> five circles, four 24 px icons stored in the code cave.</li></ul>
+    </div>
+
+    <!-- 6 -->
+    <div class="card">
+      <h3><span class="num">6</span>Echo</h3>
+      <p>Pure type. The last command fills the screen for a second, then fades to a faint word, so a glance confirms what the glasses just received.</p>
+      <div class="stage"><div class="device"><div class="scr d6">
+        <div class="abs top only-sent">Faceclaw</div>
+        <div class="abs ctr col only-idle"><div class="word faint">Ready</div><div class="sub">Tap, hold or turn the crown</div></div>
+        <div class="abs ctr col only-sent"><div class="word">Back</div><div class="bar"></div><div class="sub">Double tap</div></div>
+        <div class="abs ctr col only-off"><div class="word faint">Offline</div><div class="sub" style="color:var(--acc)">Phone not linked</div></div>
+      </div></div></div>
+      <span class="tag">Minimal</span><span class="tag">Same gestures</span>
+      <ul><li><b>Why:</b> the strongest confirmation per pixel; no chrome to learn.</li>
+        <li><b>Build:</b> font36N label plus an lv_anim opacity fade.</li></ul>
+    </div>
+
+    <!-- 7 -->
+    <div class="card">
+      <h3><span class="num">7</span>Ripple</h3>
+      <p>Touch feedback happens where your finger is: rings expand from the touch point and the gesture name appears at the top, like a trackpad that answers back.</p>
+      <div class="stage"><div class="device"><div class="scr d7">
+        <div class="abs ctr col only-idle" style="gap:10px"><div style="width:14px;height:14px;border-radius:50%;border:2px solid #4a4e53"></div><div class="tip">Touch anywhere</div></div>
+        <div class="abs r only-sent" style="left:84px;top:146px;width:20px;height:20px;opacity:1"></div>
+        <div class="abs r only-sent" style="left:84px;top:146px;width:56px;height:56px;opacity:.55"></div>
+        <div class="abs r only-sent" style="left:84px;top:146px;width:100px;height:100px;opacity:.22"></div>
+        <div class="abs say row only-sent"><i class="ph ph-arrow-u-up-left" style="color:var(--acc)"></i>Back</div>
+        <div class="abs r g only-off" style="left:118px;top:118px;width:60px;height:60px"></div>
+        <div class="abs say row only-off" style="color:var(--acc)"><i class="ph ph-link-break"></i>No phone</div>
+      </div></div></div>
+      <span class="tag">Feedback first</span><span class="tag">Same gestures</span>
+      <ul><li><b>Why:</b> confirms the touch landed even before the gesture resolves.</li>
+        <li><b>Build:</b> three circle objects animated with lv_anim on press.</li></ul>
+    </div>
+
+    <!-- 8 -->
+    <div class="card">
+      <h3><span class="num">8</span>Status board</h3>
+      <p>Everything the watch actually knows, in one view: time, phone link, watch battery, the last command and which key went out.</p>
+      <div class="stage"><div class="device"><div class="scr d8">
+        <div class="abs clk">10:42</div>
+        <div class="abs chips row">
+          <div class="chip row no-off"><i class="ph ph-link"></i>Phone</div>
+          <div class="chip bad row only-off"><i class="ph ph-link-break"></i>No phone</div>
+          <div class="chip row"><i class="ph ph-battery-high"></i>82%</div>
+        </div>
+        <div class="abs last col"><div class="k">Last</div><div class="v only-idle" style="color:var(--ink3)">None yet</div><div class="v only-sent">Menu</div><div class="v only-off" style="color:var(--ink3)">Not sent</div></div>
+        <div class="abs keys row">
+          <i class="ph ph-hand-tap"></i><i class="ph ph-arrow-u-up-left"></i>
+          <i class="ph ph-list only-idle"></i><i class="ph ph-list only-off"></i><i class="ph-fill ph-list on only-sent"></i>
+          <i class="ph ph-squares-four"></i><i class="ph ph-microphone"></i>
+        </div>
+      </div></div></div>
+      <span class="tag">Dense</span><span class="tag">Same gestures</span>
+      <ul><li><b>Why:</b> best for debugging the link on day one; busier than needed later.</li>
+        <li><b>Build:</b> labels plus the stock battery getter (sample values shown).</li></ul>
+    </div>
+
+    <!-- 9 -->
+    <div class="card">
+      <h3><span class="num">9</span>Night</h3>
+      <p>An AMOLED-friendly dim face for long sessions. Nothing bright stays on screen; each command flashes the rim once in the accent colour, paired with a short buzz.</p>
+      <div class="stage"><div class="device"><div class="scr d9">
+        <div class="abs edge only-sent"></div>
+        <div class="abs ctr col"><div class="c">10:42</div><div class="s only-idle">Faceclaw</div><div class="s only-sent" style="color:#8a8e93">Select</div><div class="s only-off" style="color:#8a4a3a">No phone</div></div>
+      </div></div></div>
+      <span class="tag">Battery saver</span><span class="tag">Same gestures</span>
+      <ul><li><b>Why:</b> the remote may stay open for an hour; this keeps pixels and drain low.</li>
+        <li><b>Build:</b> grey labels, a ring object shown for 250 ms, the stock motor.</li></ul>
+    </div>
+
+    <!-- 10 -->
+    <div class="card">
+      <h3><span class="num">10</span>Hold menu</h3>
+      <p>Tap and the crown work as usual. Holding opens a radial menu under your finger; slide to an option and lift to send it, so rare commands never need to be memorised.</p>
+      <div class="stage"><div class="device"><div class="scr d10">
+        <div class="abs ctr col only-idle"><div class="c">10:42</div><div class="hint">Tap to select<br>Hold for more</div></div>
+        <div class="abs ctr col only-off"><div class="c">10:42</div><div class="hint" style="color:var(--acc)">No phone</div></div>
+        <div class="abs opt col only-sent" style="left:118px;top:44px"><i class="ph ph-list"></i>Menu</div>
+        <div class="abs opt col hot only-sent" style="left:190px;top:96px"><i class="ph ph-squares-four"></i>Apps</div>
+        <div class="abs opt col only-sent" style="left:164px;top:180px"><i class="ph ph-microphone"></i>Voice</div>
+        <div class="abs opt col only-sent" style="left:72px;top:180px"><i class="ph ph-arrow-u-up-left"></i>Back</div>
+        <div class="abs opt col only-sent" style="left:46px;top:96px"><i class="ph ph-camera"></i>Photo</div>
+        <div class="abs finger only-sent" style="left:182px;top:104px"></div>
+        <div class="abs ctr col rel only-sent">Lift to send</div>
+      </div></div></div>
+      <span class="tag">Power user</span><span class="tag">Changes hold</span>
+      <ul><li><b>Why:</b> one gesture reaches five commands; hold no longer means only Menu.</li>
+        <li><b>Build:</b> objects shown on LONG_PRESSED, hit test on PRESSING.</li></ul>
+    </div>
+
+    <!-- 11 -->
+    <div class="card">
+      <h3><span class="num">11</span>Edge tray</h3>
+      <p>Like the Wear OS app's hidden tray: a calm pad by default, and a swipe up from the bottom edge reveals four buttons for commands you rarely need.</p>
+      <div class="stage"><div class="device"><div class="scr d11">
+        <div class="abs col" style="left:50%;top:40%;transform:translate(-50%,-50%)"><div class="c">10:42</div>
+          <div class="s only-idle">Phone linked</div><div class="s only-sent">Phone linked</div><div class="s only-off" style="color:var(--acc)">No phone</div></div>
+        <div class="abs grab no-sent"></div>
+        <div class="abs tray row only-sent">
+          <div class="b row"><i class="ph ph-microphone"></i></div>
+          <div class="b row hot"><i class="ph ph-squares-four"></i></div>
+          <div class="b row"><i class="ph ph-list"></i></div>
+          <div class="b row"><i class="ph ph-camera"></i></div>
+        </div>
+      </div></div></div>
+      <span class="tag">Wear OS parity</span><span class="tag">Adds swipe up</span>
+      <ul><li><b>Why:</b> keeps the pad clean while still offering buttons when unsure.</li>
+        <li><b>Build:</b> a container slid with lv_anim on the GESTURE event.</li></ul>
+    </div>
+
+    <!-- 12 -->
+    <div class="card">
+      <h3><span class="num">12</span>Gesture guide</h3>
+      <p>The first few times, the screen labels every gesture around the edge. After ten commands the hints fade back and only the centre echo stays.</p>
+      <div class="stage"><div class="device"><div class="scr d12">
+        <div class="abs g" style="left:50%;top:30px;transform:translateX(-50%)"><b>Double tap</b>Back</div>
+        <div class="abs g" style="left:22px;top:50%;transform:translateY(-50%)"><b>Hold</b>Menu</div>
+        <div class="abs g" style="right:18px;top:50%;transform:translateY(-50%)"><b>Turn</b>Scroll</div>
+        <div class="abs g" style="left:50%;bottom:26px;transform:translateX(-50%)"><b>Press crown</b>Voice</div>
+        <div class="abs ctr col tapc only-idle">Tap<br><span style="color:var(--ink2);font-size:10.5px">Select</span></div>
+        <div class="abs ctr col tapc hot only-sent">Menu<br><span style="color:var(--acc);font-size:10.5px">sent</span></div>
+        <div class="abs ctr col tapc only-off" style="color:var(--acc)">No phone</div>
+      </div></div></div>
+      <span class="tag">Onboarding</span><span class="tag">Same gestures</span>
+      <ul><li><b>Why:</b> teaches the gesture set on the device, then gets out of the way.</li>
+        <li><b>Build:</b> five labels; a counter in watch settings storage.</li></ul>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <b>Shared rules.</b> Black AMOLED background, the stock CMF grey (#282C30) for surfaces, one accent (Faceclaw lobster orange) used only for the command just sent and for problems. Every design reuses the eight Bluetooth keys the remote already sends, so the phone side does not change. The watch cannot see the glasses, so no design shows the glasses' current app; it shows what the watch knows: time, watch battery, the phone link, and the last command. A short vibration on each command is assumed for all of them.
+  </div>
+</div>
+</body>
+</html>

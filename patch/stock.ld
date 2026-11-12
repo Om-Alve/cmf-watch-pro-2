@@ -1,0 +1,22 @@
+stock_log_1 = 0x1014c819;
+stock_system_app_launch = 0x10054cf5;
+stock_hid_key = 0x1015ee8d;
+stock_hid_send_report = 0x1015edad;
+stock_ui_view_creater = 0x100d587d;
+stock_font_load = 0x100df9a1;
+stock_font_unload = 0x101b9915;
+stock_voice_assistant_res_dsc = 0x100ad2ed;
+stock_scene_load_texts = 0x10184a5d;
+stock_view_open = 0x101898bd;
+stock_scene_load_images = 0x101848d5;
+stock_rtc_get_time = 0x100c14b5;
+stock_phone_connection = 0x101d5c61;
+stock_ux2sys_set = 0x100e08b9;
+stock_screen_hold = 0x101b59a9;
+stock_screen_release = 0x100c1859;
+stock_gesture_set = 0x10182239;
+stock_view_back = 0x101897fd;
+lv_indev_get_point = 0x101c4f57;
+lv_indev_get_gesture_dir = 0x101c4f7d;
+lv_indev_wait_release = 0x101c4fd5;
+INCLUDE ../re/notes/stock_api.ld

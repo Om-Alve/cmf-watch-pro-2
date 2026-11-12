@@ -1,0 +1,18 @@
+# Vendor firmware, builds, packages, emulator runs and hardware logs stay local.
+*.bin
+*.elf
+*.o
+*.obj
+*.map
+*.dis
+*.pyc
+__pycache__/
+runs/
+dist/
+patch/build/
+sim/build/
+re/agent-*/
+re/icon/*.bin
+.DS_Store
+re/icon/stock*.png
+re/icon/remote_ui_sheet.png
