@@ -50,6 +50,15 @@ class Script:
             self.add(f"shot:{shot}", 0.2)
         self.add(f"t 0 {x1} {y1}", 0.9)
 
+    def quick_tap(self, p):
+        self.add(f"t 1 {p[0]} {p[1]}", 0.06)
+        self.add(f"t 0 {p[0]} {p[1]}", 0.08)
+
+    def quick_flick(self, a, b):
+        for i in range(5):
+            self.add(f"t 1 {a[0] + (b[0] - a[0]) * i // 4} {a[1] + (b[1] - a[1]) * i // 4}", 0.02)
+        self.add(f"t 0 {b[0]} {b[1]}", 0.08)
+
     def tap(self, p):
         self.add(f"t 1 {p[0]} {p[1]}", 0.35)
         self.add(f"t 0 {p[0]} {p[1]}", 0.9)
@@ -73,6 +82,16 @@ def build():
 
     s.tap(MIDDLE)
     expected.append(" ")
+
+    # Fast typing: 60 ms taps and 100 ms flicks with 80 ms gaps. The point read at release
+    # is stale after short contacts, so this catches strokes judged by the release point.
+    for _ in range(2):
+        s.quick_tap(GRID[1])
+        s.quick_flick(GRID[7], (GRID[7][0] - FLICK, GRID[7][1]))
+        s.quick_tap(GRID[1])
+        s.quick_tap(GRID[4])
+        expected.extend("even")
+        s.add("wait", 0.8)
     s.tap(TOGGLE)
     s.add("shot:03_numbers", 0.5)
 

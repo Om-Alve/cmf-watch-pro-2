@@ -84,6 +84,7 @@ struct remote_ctx {
     uint8_t swiped;        /* this touch became a swipe: ignore its click / long press */
     lv_timer_t *exit_timer;
     lv_coord_t press_x, press_y;
+    lv_coord_t far_x, far_y;       /* point of this stroke furthest from the press (typing) */
     uint16_t idle_ticks;   /* ticks since the last gesture; the screen hold ends at IDLE_TICKS */
     uint8_t mode;          /* enum mode */
     uint8_t page;          /* PAGE_LETTERS or PAGE_NUMBERS */
@@ -483,10 +484,18 @@ static void on_type_touch(struct remote_ctx *c, uint32_t code)
     }
     if (code != LV_EVENT_PRESSED && code != LV_EVENT_PRESSING && code != LV_EVENT_RELEASED)
         return;
-    lv_indev_get_point(lv_indev_get_act(), &p);
+    /* The point read with RELEASED is unreliable after a short contact (it can be a point
+       from an earlier touch), and a quick flick may be first seen part way along and drift
+       back before lifting. So a stroke is judged by its point furthest from the press. */
+    if (code == LV_EVENT_RELEASED) {
+        p.x = c->far_x;
+        p.y = c->far_y;
+    } else {
+        lv_indev_get_point(lv_indev_get_act(), &p);
+    }
     if (code == LV_EVENT_PRESSED) {
-        c->press_x = p.x;
-        c->press_y = p.y;
+        c->press_x = c->far_x = p.x;
+        c->press_y = c->far_y = p.y;
         c->type_key = key_at(p.x, p.y);
         c->type_cancelled = 0;
         c->repeat_fired = 0;
@@ -501,6 +510,11 @@ static void on_type_touch(struct remote_ctx *c, uint32_t code)
         return;
     if (code == LV_EVENT_PRESSING) {
         lv_coord_t dx = p.x - c->press_x, dy = p.y - c->press_y;
+        lv_coord_t fx = c->far_x - c->press_x, fy = c->far_y - c->press_y;
+        if (dx * dx + dy * dy > fx * fx + fy * fy) {
+            c->far_x = p.x;
+            c->far_y = p.y;
+        }
         if (c->type_key == KEY_DELETE && dx * dx + dy * dy >= TAP_PX * TAP_PX) {
             c->type_cancelled = 1;
             cancel_repeat(c);
