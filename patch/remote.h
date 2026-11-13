@@ -20,3 +20,5 @@ enum remote_key {
 void remote_log(const char *fmt, unsigned arg);
 void remote_key(enum remote_key key);
 void remote_prime(void);
+/* One typed character (7-bit ASCII; '\b' backspace). */
+void remote_text(char ch);

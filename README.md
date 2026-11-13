@@ -42,6 +42,93 @@ uv run --project ../cmf-watch-utils python tools/emu.py --app patch/build/app_pa
 
 ## Findings
 
+### Typing prototype (emulator only)
+
+The Faceclaw remote has a second screen for text entry. Swipe left from the rightmost
+80 pixels to open it. Press and release the crown to return to the remote.
+The left-edge swipe still exits the remote.
+
+The keyboard is a 3x3 grid with a bottom row. Each grid key shows a left flick letter,
+a bright tap letter and a right flick letter, for example `B A C`. Tap the bright letter
+or flick sideways for its neighbour. The key is fixed when the finger goes down. A
+vertical drag, a diagonal drag, a flick longer than 140 pixels, or lifting outside the
+round screen sends nothing and does not vibrate. The selected letter turns orange while
+the finger moves, and a preview above the grid shows the candidate. A character is
+requested on release, with a short vibration.
+
+Letters page:
+
+| Left flick | Tap | Right flick |
+| --- | --- | --- |
+| B | A | C |
+| D | E | F |
+| G | H | I |
+| J | L | K |
+| M | N | O |
+| P | R | Q |
+| S | T | U |
+| V | W | X |
+| Z | Y | . |
+
+Numbers page:
+
+| Left flick | Tap | Right flick |
+| --- | --- | --- |
+| . | 1 | , |
+| ? | 2 | ! |
+| ' | 3 | " |
+| : | 4 | ; |
+| - | 5 | _ |
+| / | 6 | \\ |
+| ( | 7 | ) |
+| @ | 8 | # |
+| + | 9 | = |
+| space | 0 | % |
+
+The bottom row has three keys. `123` on the letters page and `ABC` on the numbers page
+switches pages. The middle key is `SPACE` on the letters page. On the numbers page it
+types `0`, flicks left to space and right to `%`. `DEL` is backspace. Hold it to repeat:
+the first repeat comes after 650 ms, then every 160 ms. It stops on release, on a lost
+press, and when the finger moves more than 28 pixels.
+
+Text uses consumer report id 2 with a payload byte of `0x80 | ASCII`, followed by a zero
+release byte. Letters are lowercase ASCII. Digits and punctuation are sent as themselves.
+Space is 0x20 and backspace is 0x08. The stock HID routine preserves the 8-bit parameter,
+including its delayed connect path. The patch drops text on that path, as it already does
+for remote commands. The text payloads are distinct from all existing remote commands.
+
+All labels use `/NAND:A/font36N.font`, the watch's dot font. A probe of A-Z, 0-9 and the
+punctuation in font36N, font28M and font24M found every character in all three fonts
+(`runs/flick-glyphs/`). font36N draws `0` like `O`, so the two look the same on the watch.
+font28M and font24M draw them distinctly. The space and delete
+keys use the words `SPACE` and `DEL` because the dot font's space glyph is blank.
+
+This is a custom protocol, not a Bluetooth keyboard. The phone router decodes `0x80 | c`
+for c in 0x08 and 0x20..0x7E and Faceclaw shows the draft. That decoding and the glasses
+display were not tested here.
+
+Build and check the prototype with these commands. The debug image is for the emulator
+only. Each run needs a new output directory.
+
+```sh
+python3 patch/build.py re/app_073.bin patch/build/app_type.bin --debug
+python3 tools/type_test.py patch/build/app_type.bin runs/flick-basic
+python3 tools/type_test.py patch/build/app_type.bin runs/flick-connected --connected
+python3 tools/type_test.py patch/build/app_type.bin runs/flick-reconnect --connected --reconnect
+```
+
+The checks type every letter with taps and both flicks, every digit and symbol, space on
+both pages, `%`, backspace, both page toggles, the cancel gestures, the delete repeat and its
+drag cancel, ignored crown rotation, mode entry and exit, and a remote tap after exit.
+The connected checks use GDB to fake the phone connection and compare every HID press and
+release byte. The reconnect check redirects the first character through the delayed-connect
+handler and verifies that it is dropped. These checks do not simulate the Bluetooth radio,
+phone-side decoding, or the glasses. Screenshots, the generated input script, UART output,
+and test logs stay under `runs/`. Add `--verify-only` with the same connection flags to
+check a saved run without starting QEMU.
+
+### Stock firmware and remote
+
 - ACTH header: `+0x18` data size (from 0x200), `+0x1C` makes `sum32(data)+x == 0xFFFFFFFF`,
   `+0x20` makes `sum32(header[0:0x200]) == 0xFFFFFFFF`. Stock 1.0.0.73 satisfies both, matching
   the SDK scheme used by firmware-wp2-badapple. build.py regenerates them.

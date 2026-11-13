@@ -16,6 +16,7 @@ enum { LV_DIR_LEFT = 1, LV_DIR_RIGHT = 2, LV_DIR_TOP = 4, LV_DIR_BOTTOM = 8 };
 enum {
     LV_EVENT_ALL = 0,
     LV_EVENT_PRESSED = 1,
+    LV_EVENT_PRESSING = 2,
     LV_EVENT_PRESS_LOST = 3,
     LV_EVENT_SHORT_CLICKED = 4,
     LV_EVENT_LONG_PRESSED = 5,
@@ -26,7 +27,7 @@ enum {
     LV_EVENT_KNOB = 45,
 };
 enum { LV_ALIGN_TOP_MID = 2, LV_ALIGN_BOTTOM_MID = 5, LV_ALIGN_CENTER = 9 };
-enum { LV_OBJ_FLAG_CLICKABLE = 1 << 1, LV_OBJ_FLAG_SCROLLABLE = 1 << 4, LV_OBJ_FLAG_GESTURE_BUBBLE = 1 << 15 };
+enum { LV_OBJ_FLAG_HIDDEN = 1 << 0, LV_OBJ_FLAG_CLICKABLE = 1 << 1, LV_OBJ_FLAG_SCROLLABLE = 1 << 4, LV_OBJ_FLAG_GESTURE_BUBBLE = 1 << 15 };
 enum { LV_TEXT_ALIGN_CENTER = 2 };
 #define LV_PART_MAIN 0
 #define LV_OPA_COVER 255
@@ -53,6 +54,7 @@ void lv_obj_set_style_text_font(lv_obj_t *obj, const lv_font_t *f, uint32_t sel)
 void lv_obj_set_style_text_align(lv_obj_t *obj, uint8_t a, uint32_t sel);
 lv_obj_t *lv_label_create(lv_obj_t *parent);
 void lv_label_set_text(lv_obj_t *obj, const char *text);
+void lv_label_set_text_static(lv_obj_t *obj, const char *text);
 void lv_label_set_text_fmt(lv_obj_t *obj, const char *fmt, ...);
 void lv_obj_set_style_radius(lv_obj_t *obj, lv_coord_t r, uint32_t sel);
 void lv_obj_set_width(lv_obj_t *obj, lv_coord_t w);

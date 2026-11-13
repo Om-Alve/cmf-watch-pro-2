@@ -14,6 +14,54 @@ struct jx_view {
     uint8_t flags;
 };
 
+enum mode { MODE_REMOTE, MODE_TYPE };
+
+/* Typing screen: nine letter/number keys, a bottom row, and a preview line.
+   Each key is a left flick, a tap and a right flick. 0 means no character. */
+#define PAGE_LETTERS 0
+#define PAGE_NUMBERS 1
+static const char pages[2][10][3] = {
+    {
+        {'B', 'A', 'C'}, {'D', 'E', 'F'}, {'G', 'H', 'I'},
+        {'J', 'L', 'K'}, {'M', 'N', 'O'}, {'P', 'R', 'Q'},
+        {'S', 'T', 'U'}, {'V', 'W', 'X'}, {'Z', 'Y', '.'},
+        {0, ' ', 0},
+    },
+    {
+        {'.', '1', ','}, {'?', '2', '!'}, {'\'', '3', '"'},
+        {':', '4', ';'}, {'-', '5', '_'}, {'/', '6', '\\'},
+        {'(', '7', ')'}, {'@', '8', '#'}, {'+', '9', '='},
+        {' ', '0', '%'},
+    },
+};
+
+#define GRID_X0 140
+#define GRID_Y0 144
+#define GRID_DX 93
+#define GRID_DY 90
+#define KEY_HALF_W 44
+#define KEY_HALF_H 39
+#define BOTTOM_Y0 367
+#define BOTTOM_Y1 425
+#define TOGGLE_X0 78
+#define TOGGLE_X1 146
+#define MID_X0 157
+#define MID_X1 286
+#define DEL_X0 296
+#define DEL_X1 383
+#define MID_KEY 9
+#define KEY_TOGGLE 10
+#define KEY_DELETE 11
+#define KEY_NONE 0xff
+
+#define LABELS 32              /* 10 keys x 3, then toggle and delete */
+#define LABEL_TOGGLE 30
+#define LABEL_DELETE 31
+#define LABEL_NONE 0xff
+#define TAP_PX 28
+#define REPEAT_DELAY_MS 650
+#define REPEAT_MS 160
+
 /* Dot-matrix layout (design 2): link LED, two-line clock, one status word. */
 struct remote_ctx {
     lv_obj_t *scr;
@@ -37,6 +85,18 @@ struct remote_ctx {
     lv_timer_t *exit_timer;
     lv_coord_t press_x, press_y;
     uint16_t idle_ticks;   /* ticks since the last gesture; the screen hold ends at IDLE_TICKS */
+    uint8_t mode;          /* enum mode */
+    uint8_t page;          /* PAGE_LETTERS or PAGE_NUMBERS */
+    uint8_t type_key;      /* key under the finger, KEY_NONE between touches */
+    uint8_t type_cancelled;
+    uint8_t repeat_fired;
+    uint8_t hot;           /* label drawn in the accent colour, LABEL_NONE if none */
+    lv_timer_t *repeat_timer;
+    lv_obj_t *type_layer;
+    lv_obj_t *keys[LABELS];
+    lv_obj_t *preview;
+    char label_text[LABELS][2];
+    char preview_text[2];
     uint32_t clock_font[16];
     uint32_t word_font[16];
 };
@@ -90,6 +150,7 @@ extern void stock_view_back(void);
 #define COLOR_ACCENT LV_COLOR_HEX(0xF0552D)
 #define COLOR_INK LV_COLOR_HEX(0xF0F0F0)
 #define COLOR_MUTED LV_COLOR_HEX(0x9A9EA3)
+#define COLOR_SIDE LV_COLOR_HEX(0x5C6066)
 #define FLASH_TICKS 3          /* x 500 ms */
 #define TICK_MS 500
 #define GESTURES_ALL 30
@@ -157,6 +218,57 @@ static void screen_release(struct remote_ctx *c)
     }
 }
 
+static lv_color_t label_color(uint8_t idx)
+{
+    return idx >= LABEL_TOGGLE || idx % 3 == 1 ? COLOR_INK : COLOR_SIDE;
+}
+
+static void set_hot(struct remote_ctx *c, uint8_t idx)
+{
+    if (idx == c->hot)
+        return;
+    if (c->hot != LABEL_NONE)
+        lv_obj_set_style_text_color(c->keys[c->hot], label_color(c->hot), LV_PART_MAIN);
+    if (idx != LABEL_NONE)
+        lv_obj_set_style_text_color(c->keys[idx], COLOR_ACCENT, LV_PART_MAIN);
+    c->hot = idx;
+}
+
+static void set_preview(struct remote_ctx *c, char ch)
+{
+    if (!ch)
+        lv_label_set_text_static(c->preview, "");
+    else if (ch == ' ')
+        lv_label_set_text_static(c->preview, "SPACE");
+    else if (ch == '\b')
+        lv_label_set_text_static(c->preview, "DEL");
+    else {
+        c->preview_text[0] = ch;
+        c->preview_text[1] = 0;
+        lv_label_set_text_static(c->preview, c->preview_text);
+    }
+}
+
+static void set_cell(struct remote_ctx *c, uint8_t idx, char ch)
+{
+    if (ch == ' ') {
+        lv_label_set_text_static(c->keys[idx], idx == MID_KEY * 3 + 1 ? "SPACE" : "SP");
+        return;
+    }
+    c->label_text[idx][0] = ch;
+    c->label_text[idx][1] = 0;
+    lv_label_set_text_static(c->keys[idx], c->label_text[idx]);
+}
+
+static void set_page(struct remote_ctx *c, uint8_t page)
+{
+    c->page = page;
+    for (uint8_t i = 0; i < 10; i++)
+        for (uint8_t k = 0; k < 3; k++)
+            set_cell(c, i * 3 + k, pages[page][i][k]);
+    lv_label_set_text_static(c->keys[LABEL_TOGGLE], page == PAGE_LETTERS ? "123" : "ABC");
+}
+
 static void tick(lv_timer_t *timer)
 {
     struct remote_ctx *c = lv_timer_user_data(timer);
@@ -195,6 +307,14 @@ static void cancel_tap_timer(struct remote_ctx *c)
     }
 }
 
+static void cancel_repeat(struct remote_ctx *c)
+{
+    if (c->repeat_timer) {
+        lv_timer_del(c->repeat_timer);
+        c->repeat_timer = 0;
+    }
+}
+
 static void tap_timeout(lv_timer_t *t)
 {
     struct remote_ctx *c = lv_timer_user_data(t);
@@ -212,6 +332,187 @@ static void exit_timeout(lv_timer_t *t)
     lv_timer_del(t);
     c->exit_timer = 0;
     stock_view_back();
+}
+
+static void set_mode(struct remote_ctx *c, enum mode mode)
+{
+    remote_log("faceclaw-remote: mode %d\n", mode);
+    cancel_tap_timer(c);
+    cancel_repeat(c);
+    c->pending_tap = 0;
+    c->second_press = 0;
+    c->type_key = KEY_NONE;
+    set_hot(c, LABEL_NONE);
+    set_preview(c, 0);
+    c->mode = mode;
+    if (mode == MODE_TYPE)
+        lv_obj_clear_flag(c->type_layer, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_add_flag(c->type_layer, LV_OBJ_FLAG_HIDDEN);
+    screen_hold(c);
+}
+
+static int inside(lv_coord_t x, lv_coord_t y)
+{
+    int dx = x - 233, dy = y - 233;
+    return dx * dx + dy * dy <= 233 * 233;
+}
+
+static uint8_t key_at(lv_coord_t x, lv_coord_t y)
+{
+    if (!inside(x, y))
+        return KEY_NONE;
+    if (y >= BOTTOM_Y0 && y <= BOTTOM_Y1) {
+        if (x >= TOGGLE_X0 && x <= TOGGLE_X1)
+            return KEY_TOGGLE;
+        if (x >= MID_X0 && x <= MID_X1)
+            return MID_KEY;
+        if (x >= DEL_X0 && x <= DEL_X1)
+            return KEY_DELETE;
+        return KEY_NONE;
+    }
+    for (uint8_t i = 0; i < 9; i++) {
+        lv_coord_t cx = GRID_X0 + i % 3 * GRID_DX, cy = GRID_Y0 + i / 3 * GRID_DY;
+        if (x >= cx - KEY_HALF_W && x <= cx + KEY_HALF_W && y >= cy - KEY_HALF_H && y <= cy + KEY_HALF_H)
+            return i;
+    }
+    return KEY_NONE;
+}
+
+static int tap_only(const char *row)
+{
+    return !row[0] && !row[2];
+}
+
+static char flick_char(const char *row, lv_coord_t dx, lv_coord_t dy)
+{
+    int ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
+    if (ay > 60 || ax > 140)
+        return 0;
+    if (ax < TAP_PX)
+        return row[1];
+    if (10 * ax < 13 * ay)
+        return 0;
+    return row[dx < 0 ? 0 : 2];
+}
+
+static char type_candidate(struct remote_ctx *c, lv_coord_t x, lv_coord_t y)
+{
+    const char *row;
+    lv_coord_t dx, dy;
+    if (c->type_key >= KEY_TOGGLE || c->type_cancelled || !inside(x, y))
+        return 0;
+    dx = x - c->press_x;
+    dy = y - c->press_y;
+    row = pages[c->page][c->type_key];
+    if (tap_only(row))
+        return dx * dx + dy * dy < TAP_PX * TAP_PX ? row[1] : 0;
+    return flick_char(row, dx, dy);
+}
+
+static void type_char(struct remote_ctx *c, char ch)
+{
+    screen_hold(c);
+    buzz(VIBRATE_20MS);
+    if (ch >= 'A' && ch <= 'Z')
+        ch += 'a' - 'A';
+    remote_text(ch);
+}
+
+static void repeat_timeout(lv_timer_t *t)
+{
+    struct remote_ctx *c = lv_timer_user_data(t);
+    if (c->type_key != KEY_DELETE || c->type_cancelled) {
+        lv_timer_del(t);
+        c->repeat_timer = 0;
+        return;
+    }
+    if (!c->repeat_fired) {
+        c->repeat_fired = 1;
+        lv_timer_del(t);
+        c->repeat_timer = lv_timer_create(repeat_timeout, REPEAT_MS, c);
+    }
+    type_char(c, '\b');
+}
+
+static void type_update(struct remote_ctx *c, lv_coord_t x, lv_coord_t y, int commit)
+{
+    lv_coord_t dx = x - c->press_x, dy = y - c->press_y;
+    int tap = dx * dx + dy * dy < TAP_PX * TAP_PX;
+    uint8_t idx = LABEL_NONE;
+    char ch = 0;
+    if (c->type_key == KEY_TOGGLE) {
+        if (tap && inside(x, y)) {
+            idx = LABEL_TOGGLE;
+            if (commit) {
+                buzz(VIBRATE_20MS);
+                set_page(c, c->page == PAGE_LETTERS ? PAGE_NUMBERS : PAGE_LETTERS);
+            }
+        }
+    } else if (c->type_key == KEY_DELETE) {
+        if (tap && inside(x, y) && !c->type_cancelled) {
+            idx = LABEL_DELETE;
+            ch = '\b';
+            if (commit && !c->repeat_fired)
+                type_char(c, ch);
+        }
+    } else {
+        ch = type_candidate(c, x, y);
+        if (ch) {
+            const char *row = pages[c->page][c->type_key];
+            for (uint8_t k = 0; k < 3; k++)
+                if (row[k] == ch)
+                    idx = c->type_key * 3 + k;
+            if (commit)
+                type_char(c, ch);
+        }
+    }
+    set_hot(c, idx);
+    set_preview(c, ch);
+}
+
+static void on_type_touch(struct remote_ctx *c, uint32_t code)
+{
+    lv_point_t p;
+    if (code == LV_EVENT_PRESS_LOST) {
+        cancel_repeat(c);
+        c->type_key = KEY_NONE;
+        set_hot(c, LABEL_NONE);
+        set_preview(c, 0);
+        return;
+    }
+    if (code != LV_EVENT_PRESSED && code != LV_EVENT_PRESSING && code != LV_EVENT_RELEASED)
+        return;
+    lv_indev_get_point(lv_indev_get_act(), &p);
+    if (code == LV_EVENT_PRESSED) {
+        c->press_x = p.x;
+        c->press_y = p.y;
+        c->type_key = key_at(p.x, p.y);
+        c->type_cancelled = 0;
+        c->repeat_fired = 0;
+        if (c->type_key == KEY_NONE)
+            return;
+        if (c->type_key == KEY_DELETE)
+            c->repeat_timer = lv_timer_create(repeat_timeout, REPEAT_DELAY_MS, c);
+        type_update(c, p.x, p.y, 0);
+        return;
+    }
+    if (c->type_key == KEY_NONE)
+        return;
+    if (code == LV_EVENT_PRESSING) {
+        lv_coord_t dx = p.x - c->press_x, dy = p.y - c->press_y;
+        if (c->type_key == KEY_DELETE && dx * dx + dy * dy >= TAP_PX * TAP_PX) {
+            c->type_cancelled = 1;
+            cancel_repeat(c);
+        }
+        type_update(c, p.x, p.y, 0);
+        return;
+    }
+    type_update(c, p.x, p.y, 1);
+    cancel_repeat(c);
+    c->type_key = KEY_NONE;
+    set_hot(c, LABEL_NONE);
+    set_preview(c, 0);
 }
 
 static void on_gesture(struct remote_ctx *c, lv_indev_t *indev)
@@ -232,6 +533,10 @@ static void on_gesture(struct remote_ctx *c, lv_indev_t *indev)
         send(c, KEY_SWIPE_RIGHT, "SWIPE RIGHT");
         break;
     case LV_DIR_LEFT:
+        if (c->press_x >= 466 - EDGE_PX) {
+            set_mode(c, MODE_TYPE);
+            return;
+        }
         send(c, KEY_SWIPE_LEFT, "SWIPE LEFT");
         break;
     case LV_DIR_TOP:
@@ -257,6 +562,10 @@ static void on_touch(lv_event_t *e)
 {
     struct remote_ctx *c = lv_event_user_data(e);
     uint32_t code = lv_event_get_code(e);
+    if (c->mode == MODE_TYPE) {
+        on_type_touch(c, code);
+        return;
+    }
     if (code == LV_EVENT_GESTURE) {
         on_gesture(c, lv_event_param(e));
         return;
@@ -317,6 +626,8 @@ static void on_knob(lv_event_t *e)
     int32_t *step = lv_event_param(e);
     if (!step || *step == 0)
         return;
+    if (c->mode == MODE_TYPE)
+        return;
     /* On the real watch the stock list direction felt inverted: turning the crown the
        way that scrolls the app list down should scroll Faceclaw up. */
     if (*step > 0)
@@ -343,6 +654,54 @@ static lv_obj_t *dot_label(struct remote_ctx *c, int use_clock_font, lv_color_t 
     lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_align(l, LV_ALIGN_CENTER, 0, y);
     return l;
+}
+
+static void plain(lv_obj_t *o)
+{
+    lv_obj_set_style_border_width(o, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+}
+
+/* Touches fall through the layer and its labels to the root, which owns all input. */
+static lv_obj_t *type_label(struct remote_ctx *c, lv_coord_t x, lv_coord_t y, lv_color_t color)
+{
+    lv_obj_t *l = lv_label_create(c->type_layer);
+    if (c->word_font_loaded)
+        lv_obj_set_style_text_font(l, (const lv_font_t *)c->word_font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(l, color, LV_PART_MAIN);
+    lv_obj_align(l, LV_ALIGN_CENTER, x - 233, y - 233);
+    return l;
+}
+
+static void build_type_layer(struct remote_ctx *c)
+{
+    c->type_layer = lv_obj_create(c->root);
+    lv_obj_set_size(c->type_layer, 466, 466);
+    lv_obj_align(c->type_layer, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(c->type_layer, LV_COLOR_HEX(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(c->type_layer, LV_OPA_COVER, LV_PART_MAIN);
+    plain(c->type_layer);
+    lv_obj_add_flag(c->type_layer, LV_OBJ_FLAG_HIDDEN);
+
+    for (uint8_t i = 0; i < 10; i++) {
+        lv_coord_t cx = i == MID_KEY ? (MID_X0 + MID_X1) / 2 : GRID_X0 + i % 3 * GRID_DX;
+        lv_coord_t cy = i == MID_KEY ? (BOTTOM_Y0 + BOTTOM_Y1) / 2 : GRID_Y0 + i / 3 * GRID_DY;
+        lv_coord_t off = i == MID_KEY ? 40 : 28;
+        for (uint8_t k = 0; k < 3; k++)
+            c->keys[i * 3 + k] = type_label(c, cx + (int)k * off - off, cy, label_color(i * 3 + k));
+    }
+    c->keys[LABEL_TOGGLE] = type_label(c, (TOGGLE_X0 + TOGGLE_X1) / 2, (BOTTOM_Y0 + BOTTOM_Y1) / 2, COLOR_INK);
+    c->keys[LABEL_DELETE] = type_label(c, (DEL_X0 + DEL_X1) / 2, (BOTTOM_Y0 + BOTTOM_Y1) / 2, COLOR_INK);
+    lv_label_set_text_static(c->keys[LABEL_DELETE], "DEL");
+
+    c->preview = lv_label_create(c->type_layer);
+    if (c->word_font_loaded)
+        lv_obj_set_style_text_font(c->preview, (const lv_font_t *)c->word_font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(c->preview, COLOR_ACCENT, LV_PART_MAIN);
+    lv_obj_set_width(c->preview, 400);
+    lv_obj_set_style_text_align(c->preview, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_align(c->preview, LV_ALIGN_CENTER, 0, -153);
+    set_page(c, PAGE_LETTERS);
 }
 
 static int inflate(struct jx_view *v)
@@ -376,6 +735,10 @@ static int inflate(struct jx_view *v)
     c->hours = dot_label(c, 1, COLOR_INK, -78);
     c->minutes = dot_label(c, 1, COLOR_INK, 38);
     c->status = dot_label(c, 0, COLOR_MUTED, 142);
+    build_type_layer(c);
+    c->mode = MODE_REMOTE;
+    c->type_key = KEY_NONE;
+    c->hot = LABEL_NONE;
 
     c->linked = stock_phone_connection() != 0;
     c->flash_ticks = 0;
@@ -393,6 +756,7 @@ static int destroy(struct jx_view *v)
     remote_log("faceclaw-remote: destroy %d\n", 0);
     screen_release(c);
     cancel_tap_timer(c);
+    cancel_repeat(c);
     if (c->exit_timer) {
         lv_timer_del(c->exit_timer);
         c->exit_timer = 0;
@@ -408,6 +772,7 @@ static int destroy(struct jx_view *v)
         c->hours = 0;
         c->minutes = 0;
         c->led = 0;
+        c->type_layer = 0;
     }
     if (c->clock_font_loaded) {
         stock_font_unload(c->clock_font);
@@ -439,7 +804,10 @@ static int key(struct jx_view *v, unsigned event)
     case CROWN_SHORT_UP:
         if (c->crown_down) {
             c->crown_down = 0;
-            send(c, KEY_MUTE, "VOICE");
+            if (c->mode == MODE_TYPE)
+                set_mode(c, MODE_REMOTE);
+            else
+                send(c, KEY_MUTE, "VOICE");
         }
         return 1;
     case CROWN_LONG_DOWN:

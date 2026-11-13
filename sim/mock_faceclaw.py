@@ -7,9 +7,13 @@ from pathlib import Path
 class Handler(socketserver.StreamRequestHandler):
     def handle(self):
         request = json.loads(self.rfile.readline())
-        ok = request.get("token") == self.server.token and request.get("action") in ("input", "ping")
+        ok = request.get("token") == self.server.token and request.get("action") in ("input", "ping", "type")
         if request.get("action") == "input":
             line = json.dumps({"gesture": request.get("gesture"), "source": request.get("source"), "accepted": ok})
+            with open(self.server.log, "a") as log:
+                log.write(line + "\n")
+        elif request.get("action") == "type":
+            line = json.dumps({"type": request.get("text")})
             with open(self.server.log, "a") as log:
                 log.write(line + "\n")
         reply = {"ok": True} if ok else {"ok": False, "error": "unauthorized"}
